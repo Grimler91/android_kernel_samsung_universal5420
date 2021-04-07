@@ -21,7 +21,7 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: dhd_sdio.c 656311 2016-08-26 03:41:56Z $
+ * $Id: dhd_sdio.c 637878 2016-05-16 04:44:38Z $
  */
 
 #include <typedefs.h>
@@ -2272,16 +2272,13 @@ dhdsdio_sendfromq(dhd_bus_t *bus, uint maxframes)
 			}
 #ifdef DHD_LOSSLESS_ROAMING
 			pktdata = (uint8 *)PKTDATA(osh, pkts[i]);
-#ifdef BDC
-			/* Skip BDC header */
-			pktdata += BDC_HEADER_LEN + ((struct bdc_header *)pktdata)->dataOffset;
-#endif
 			eh = (struct ether_header *)pktdata;
-			if (eh->ether_type == hton16(ETHER_TYPE_802_1X)) {
-				uint8 prio = (uint8)PKTPRIO(pkts[i]);
 
-				/* Restore to original priority for 802.1X packet */
-				if (prio == PRIO_8021D_NC) {
+			if (eh->ether_type == hton16(ETHER_TYPE_802_1X)) {
+                                uint8 prio = (uint8)PKTPRIO(pkts[i]);
+
+                                /* Restore to original priority for 802.1X packet */
+                                if (prio == PRIO_8021D_NC) {
 					PKTSETPRIO(pkts[i], dhd->prio_8021x);
 				}
 			}
@@ -9243,39 +9240,6 @@ concate_revision_bcm4345x(dhd_bus_t *bus,
 }
 #endif /* MULTIPLE_CHIP_4345X */
 
-static int
-concate_revision_bcm43430(dhd_bus_t *bus,
-	char *fw_path, int fw_path_len, char *nv_path, int nv_path_len)
-{
-
-	uint chipver;
-	char chipver_tag[4] = {0, };
-
-	DHD_TRACE(("%s: BCM43430 Multiple Revision Check\n", __FUNCTION__));
-	if (bus->sih->chip != BCM43430_CHIP_ID) {
-		DHD_ERROR(("%s:Chip is not BCM43430\n", __FUNCTION__));
-		return -1;
-	}
-	chipver = bus->sih->chiprev;
-	DHD_ERROR(("CHIP VER = [0x%x]\n", chipver));
-	if (chipver == 0x0) {
-		DHD_ERROR(("----- CHIP bcm4343S -----\n"));
-		strcat(chipver_tag, "_3s");
-	} else if (chipver == 0x1) {
-		DHD_ERROR(("----- CHIP bcm43438 -----\n"));
-	} else if (chipver == 0x2) {
-		DHD_ERROR(("----- CHIP bcm43436L -----\n"));
-		strcat(chipver_tag, "_36");
-	} else {
-		DHD_ERROR(("----- CHIP bcm43430 unknown revision %d -----\n",
-			chipver));
-	}
-
-	strcat(fw_path, chipver_tag);
-	strcat(nv_path, chipver_tag);
-	return 0;
-}
-
 int
 concate_revision(dhd_bus_t *bus, char *fw_path, int fw_path_len, char *nv_path, int nv_path_len)
 {
@@ -9339,9 +9303,6 @@ concate_revision(dhd_bus_t *bus, char *fw_path, int fw_path_len, char *nv_path, 
 		res = concate_revision_bcm43455(bus, fw_path, fw_path_len, nv_path, nv_path_len);
 		break;
 #endif /* MULTIPLE_CHIP_4345X */
-	case BCM43430_CHIP_ID:
-		res = concate_revision_bcm43430(bus, fw_path, fw_path_len, nv_path, nv_path_len);
-		break;
 
 	default:
 		DHD_ERROR(("REVISION SPECIFIC feature is not required\n"));

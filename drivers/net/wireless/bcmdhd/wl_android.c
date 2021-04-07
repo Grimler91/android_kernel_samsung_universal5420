@@ -21,7 +21,7 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: wl_android.c 653800 2016-08-10 03:25:44Z $
+ * $Id: wl_android.c 637220 2016-05-12 02:40:02Z $
  */
 
 #include <linux/module.h>
@@ -131,9 +131,6 @@
 #define CMD_GETCCKM_RN		"get cckm_rn"
 #define CMD_SETCCKM_KRK		"set cckm_krk"
 #define CMD_GET_ASSOC_RES_IES	"get assoc_res_ies"
-
-#define CCKM_KRK_LEN    16
-#define CCKM_BTK_LEN    32
 #endif
 
 #ifdef PNO_SUPPORT
@@ -1087,7 +1084,7 @@ wl_android_set_join_prefer(struct net_device *dev, char *command, int total_len)
 	char *pcmd;
 	int total_len_left;
 	int i;
-	char hex[] = "XX";
+	char hex[2];
 
 	pcmd = command + strlen(CMD_SETJOINPREFER) + 1;
 	total_len_left = strlen(pcmd);
@@ -1577,9 +1574,7 @@ wls_parse_batching_cmd(struct net_device *dev, char *command, int total_len)
 					" <> params\n", __FUNCTION__));
 					goto exit;
 				}
-
-				while ((token2 = strsep(&pos2, PNO_PARAM_CHANNEL_DELIMETER))
-						!= NULL) {
+					while ((token2 = strsep(&pos2, PNO_PARAM_CHANNEL_DELIMETER)) != NULL) {
 					if (token2 == NULL || !*token2)
 						break;
 					if (*token2 == '\0')
@@ -1591,19 +1586,19 @@ wls_parse_batching_cmd(struct net_device *dev, char *command, int total_len)
 							(*token2 == 'A')? "A" : "B"));
 					} else {
 						if ((batch_params.nchan >= WL_NUMCHANNELS) ||
-						    	(i >= WL_NUMCHANNELS)) {
+						    (i >= WL_NUMCHANNELS)) {
 							DHD_ERROR(("Too many nchan %d\n",
 								batch_params.nchan));
 							err = BCME_BUFTOOSHORT;
 							goto exit;
 						}
 						batch_params.chan_list[i++] =
-							simple_strtol(token2, NULL, 0);
+						simple_strtol(token2, NULL, 0);
 						batch_params.nchan++;
-						DHD_PNO(("channel :%d\n",
-							batch_params.chan_list[i-1]));
+						DHD_PNO(("channel : %d\n",
+							    batch_params.chan_list[i-1]));
 					}
-				 }
+				}
 			} else if (!strncmp(param, PNO_PARAM_RTT, strlen(PNO_PARAM_RTT))) {
 				batch_params.rtt = simple_strtol(value, NULL, 0);
 				DHD_PNO(("rtt : %d\n", batch_params.rtt));
@@ -1775,38 +1770,21 @@ static int wl_android_get_cckm_rn(struct net_device *dev, char *command)
 	return sizeof(int);
 }
 
-static int
-wl_android_set_cckm_krk(struct net_device *dev, char *command, int total_len)
+static int wl_android_set_cckm_krk(struct net_device *dev, char *command)
 {
-	int error, key_len, skip_len;
-	unsigned char key[CCKM_KRK_LEN + CCKM_BTK_LEN];
-	char iovar_buf[WLC_IOCTL_SMLEN];
+	int error;
+	unsigned char key[16];
+	static char iovar_buf[WLC_IOCTL_MEDLEN];
 
 	WL_TRACE(("%s: wl_iw_set_cckm_krk\n", dev->name));
 
-	skip_len = strlen("set cckm_krk")+1;
-
-	if (total_len < (skip_len + CCKM_KRK_LEN)) {
-		return BCME_BADLEN;
-	}
-
-	if (total_len >= skip_len + CCKM_KRK_LEN + CCKM_BTK_LEN) {
-		key_len = CCKM_KRK_LEN + CCKM_BTK_LEN;
-	} else {
-		key_len = CCKM_KRK_LEN;
-	}
-
 	memset(iovar_buf, 0, sizeof(iovar_buf));
-	memcpy(key, command+skip_len, key_len);
+	memcpy(key, command+strlen("set cckm_krk")+1, 16);
 
-	WL_DBG(("CCKM KRK-BTK (%d/%d) :\n", key_len, total_len));
-	if (wl_dbg_level & WL_DBG_DBG) {
-		prhex(NULL, key, key_len);
-	}
-
-	error = wldev_iovar_setbuf(dev, "cckm_krk", key, key_len,
-		iovar_buf, WLC_IOCTL_SMLEN, NULL);
-	if (unlikely(error)) {
+	error = wldev_iovar_setbuf(dev, "cckm_krk", key, sizeof(key),
+		iovar_buf, WLC_IOCTL_MEDLEN, NULL);
+	if (unlikely(error))
+	{
 		WL_ERR((" cckm_krk set error (%d)\n", error));
 		return -1;
 	}
@@ -3586,11 +3564,6 @@ int wl_android_priv_cmd(struct net_device *net, struct ifreq *ifr, int cmd)
 
 	net_os_wake_lock(net);
 
-	if (!capable(CAP_NET_ADMIN)) {
-		ret = -EPERM;
-		goto exit;
-	}
-
 	if (!ifr->ifr_data) {
 		ret = -EINVAL;
 		goto exit;
@@ -3801,7 +3774,7 @@ wl_handle_private_cmd(struct net_device *net, char *command, u32 buf_size)
 			DHD_ERROR(("%s: fccpwrlimit2g deactivation is failed\n", __FUNCTION__));
 		} else {
 			DHD_ERROR(("%s: fccpwrlimit2g is deactivated\n", __FUNCTION__));
-	}
+		}
 #endif /* FCC_PWR_LIMIT_2G */
 	}
 #endif /* CUSTOMER_SET_COUNTRY */
@@ -3997,7 +3970,7 @@ wl_handle_private_cmd(struct net_device *net, char *command, u32 buf_size)
 		bytes_written = wl_android_get_cckm_rn(net, command);
 	}
 	else if (strnicmp(command, CMD_SETCCKM_KRK, strlen(CMD_SETCCKM_KRK)) == 0) {
-		bytes_written = wl_android_set_cckm_krk(net, command, priv_cmd.total_len);
+		bytes_written = wl_android_set_cckm_krk(net, command);
 	}
 	else if (strnicmp(command, CMD_GET_ASSOC_RES_IES, strlen(CMD_GET_ASSOC_RES_IES)) == 0) {
 		bytes_written = wl_android_get_assoc_res_ies(net, command);

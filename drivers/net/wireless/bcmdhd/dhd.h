@@ -24,7 +24,7 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: dhd.h 657638 2016-09-02 03:08:32Z $
+ * $Id: dhd.h 637878 2016-05-16 04:44:38Z $
  */
 
 /****************
@@ -229,9 +229,6 @@ typedef struct dhd_pub {
 
 	/* Internal dhd items */
 	bool up;		/* Driver up/down (to OS) */
-#ifdef WL_CFG80211
-	spinlock_t up_lock;	/* Synchronization with CFG80211 down */
-#endif /* WL_CFG80211 */
 	bool txoff;		/* Transmit flow-controlled */
 	bool dongle_reset;  /* TRUE = DEVRESET put dongle into reset */
 	enum dhd_bus_state busstate;
@@ -482,8 +479,8 @@ int dhd_pno_clean(dhd_pub_t *dhd);
  */
 extern int dhd_os_wake_lock(dhd_pub_t *pub);
 extern int dhd_os_wake_unlock(dhd_pub_t *pub);
-extern void dhd_event_wake_lock(dhd_pub_t *pub);
-extern void dhd_event_wake_unlock(dhd_pub_t *pub);
+extern int dhd_event_wake_lock(dhd_pub_t *pub);
+extern int dhd_event_wake_unlock(dhd_pub_t *pub);
 extern void dhd_pm_wake_lock_timeout(dhd_pub_t *pub, int val);
 extern void dhd_pm_wake_unlock(dhd_pub_t *pub);
 extern int dhd_os_wake_lock_timeout(dhd_pub_t *pub);

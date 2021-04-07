@@ -22,7 +22,7 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: dhd_linux.c 657638 2016-09-02 03:08:32Z $
+ * $Id: dhd_linux.c 637878 2016-05-16 04:44:38Z $
  */
 
 #include <typedefs.h>
@@ -383,7 +383,6 @@ struct ipv6_work_info_t {
 
 /* Local private structure (extension of pub) */
 typedef struct dhd_info {
-
 	dhd_pub_t pub;
 	void *adapter;			/* adapter information, interrupt, fw path etc. */
 	char fw_path[PATH_MAX];		/* path to firmware image */
@@ -437,6 +436,7 @@ typedef struct dhd_info {
 #endif
 	spinlock_t wakelock_spinlock;
 	spinlock_t wakelock_evt_spinlock;
+	uint32 wakelock_event_counter;
 	uint32 wakelock_counter;
 	bool waive_wakelock;
 	uint32 wakelock_before_waive;
@@ -1759,8 +1759,8 @@ static void
 dhd_set_mcast_list_handler(void *handle, void *event_info, u8 event)
 {
 	dhd_info_t *dhd = handle;
-	int ifidx = (int)((long int)event_info);
-	dhd_if_t *ifp = NULL;
+	dhd_if_t *ifp = event_info;
+	int ifidx;
 
 #ifdef SOFTAP
 	bool in_ap = FALSE;
@@ -1778,7 +1778,6 @@ dhd_set_mcast_list_handler(void *handle, void *event_info, u8 event)
 	}
 
 #ifdef SOFTAP
-	ifp = dhd->iflist[ifidx];
 	flags = dhd_os_spin_lock(&dhd->pub);
 	in_ap = (ap_net_dev != NULL);
 	dhd_os_spin_unlock(&dhd->pub, flags);
@@ -1793,9 +1792,6 @@ dhd_set_mcast_list_handler(void *handle, void *event_info, u8 event)
 
 	dhd_net_if_lock_local(dhd);
 	DHD_OS_WAKE_LOCK(&dhd->pub);
-
-	/* Be sure to make corresponding (dhd_if_t*) pointer after lock() */
-	ifp = dhd->iflist[ifidx];
 
 	if (ifp == NULL || !dhd->pub.up) {
 		DHD_ERROR(("%s: interface info not available/down \n", __FUNCTION__));
@@ -1852,7 +1848,7 @@ dhd_set_multicast_list(struct net_device *dev)
 		return;
 
 	dhd->iflist[ifidx]->set_multicast = TRUE;
-	dhd_deferred_schedule_work((void *)((long int)ifidx), DHD_WQ_WORK_SET_MCAST_LIST,
+	dhd_deferred_schedule_work((void *)dhd->iflist[ifidx], DHD_WQ_WORK_SET_MCAST_LIST,
 		dhd_set_mcast_list_handler, DHD_WORK_PRIORITY_LOW);
 }
 
@@ -3515,9 +3511,6 @@ dhd_stop(struct net_device *net)
 {
 	int ifidx = 0;
 	dhd_info_t *dhd = *(dhd_info_t **)netdev_priv(net);
-#ifdef WL_CFG80211
-	unsigned long flags = 0;
-#endif /* WL_CFG80211 */
 #if defined(CUSTOMER_HW4) && defined(PLATFORM_SLP)
 	if (g_if_flag & DHD_FLAG_P2P_MODE) {
 		wl_cfg80211_scan_stop(net);
@@ -3546,13 +3539,7 @@ dhd_stop(struct net_device *net)
 
 	/* Set state and stop OS transmissions */
 	netif_stop_queue(net);
-#ifdef WL_CFG80211
-	spin_lock_irqsave(&dhd->pub.up_lock, flags);
 	dhd->pub.up = 0;
-	spin_unlock_irqrestore(&dhd->pub.up_lock, flags);
-#else
-	dhd->pub.up = 0;
-#endif /* WL_CFG80211 */
 
 #ifdef ENABLE_CONTROL_SCHED
 	dhd_sysfs_destroy_node(net);
@@ -4035,6 +4022,7 @@ dhd_allocate_if(dhd_pub_t *dhdpub, int ifidx, char *name,
 
 	ASSERT(dhdinfo && (ifidx < DHD_MAX_IFS));
 	ifp = dhdinfo->iflist[ifidx];
+	dhdinfo->iflist[ifidx] = NULL;
 
 	if (ifp != NULL) {
 		if (ifp->net != NULL) {
@@ -4117,6 +4105,7 @@ dhd_remove_if(dhd_pub_t *dhdpub, int ifidx, bool need_rtnl_lock)
 
 	ifp = dhdinfo->iflist[ifidx];
 	if (ifp != NULL) {
+		dhdinfo->iflist[ifidx] = NULL;
 		if (ifp->net != NULL) {
 			DHD_ERROR(("deleting interface '%s' idx %d\n", ifp->net->name, ifp->idx));
 
@@ -4136,9 +4125,7 @@ dhd_remove_if(dhd_pub_t *dhdpub, int ifidx, bool need_rtnl_lock)
 			ifp->net = NULL;
 		}
 
-		dhdinfo->iflist[ifidx] = NULL;
 		MFREE(dhdinfo->pub.osh, ifp, sizeof(*ifp));
-
 	}
 
 	return BCME_OK;
@@ -4304,7 +4291,6 @@ dhd_attach(osl_t *osh, struct dhd_bus *bus, uint bus_hdrlen)
 	dhd_state |= DHD_ATTACH_STATE_PROT_ATTACH;
 
 #ifdef WL_CFG80211
-	spin_lock_init(&dhd->pub.up_lock);
 	/* Attach and link in the cfg80211 */
 	if (unlikely(wl_cfg80211_attach(net, &dhd->pub))) {
 		DHD_ERROR(("wl_cfg80211_attach failed\n"));
@@ -4327,9 +4313,6 @@ dhd_attach(osl_t *osh, struct dhd_bus *bus, uint bus_hdrlen)
 	if (dhd_watchdog_prio >= 0) {
 		/* Initialize watchdog thread */
 		PROC_START(dhd_watchdog_thread, dhd, &dhd->thr_wdt_ctl, 0, "dhd_watchdog_thread");
-		if (dhd->thr_wdt_ctl.thr_pid < 0) {
-			goto fail;
-		}
 
 	} else {
 		dhd->thr_wdt_ctl.thr_pid = -1;
@@ -4343,9 +4326,6 @@ dhd_attach(osl_t *osh, struct dhd_bus *bus, uint bus_hdrlen)
 	if (dhd_dpc_prio >= 0) {
 		/* Initialize DPC thread */
 		PROC_START(dhd_dpc_thread, dhd, &dhd->thr_dpc_ctl, 0, "dhd_dpc");
-		if (dhd->thr_dpc_ctl.thr_pid < 0) {
-			goto fail;
-		}
 	} else {
 		/*  use tasklet for dpc */
 		tasklet_init(&dhd->tasklet, dhd_dpc, (ulong)dhd);
@@ -4356,9 +4336,6 @@ dhd_attach(osl_t *osh, struct dhd_bus *bus, uint bus_hdrlen)
 		bzero(&dhd->pub.skbbuf[0], sizeof(void *) * MAXSKBPEND);
 		/* Initialize RXF thread */
 		PROC_START(dhd_rxf_thread, dhd, &dhd->thr_rxf_ctl, 0, "dhd_rxf");
-		if (dhd->thr_rxf_ctl.thr_pid < 0) {
-			goto fail;
-		}
 	}
 
 	dhd_state |= DHD_ATTACH_STATE_THREADS_CREATED;
@@ -6739,9 +6716,6 @@ dhd_wl_host_event(dhd_info_t *dhd, int *ifidx, void *pktdata, size_t pktlen,
 	wl_event_msg_t *event, void **data)
 {
 	int bcmerror = 0;
-#ifdef WL_CFG80211
-	unsigned long flags = 0;
-#endif /* WL_CFG80211 */
 	ASSERT(dhd != NULL);
 
 	bcmerror = wl_host_event(&dhd->pub, ifidx, pktdata, pktlen, event, data);
@@ -6751,13 +6725,8 @@ dhd_wl_host_event(dhd_info_t *dhd, int *ifidx, void *pktdata, size_t pktlen,
 #ifdef WL_CFG80211
 	ASSERT(dhd->iflist[*ifidx] != NULL);
 	ASSERT(dhd->iflist[*ifidx]->net != NULL);
-	if (dhd->iflist[*ifidx]->net) {
-		spin_lock_irqsave(&dhd->pub.up_lock, flags);
-		if (dhd->pub.up) {
-			wl_cfg80211_event(dhd->iflist[*ifidx]->net, event, *data);
-		}
-		spin_unlock_irqrestore(&dhd->pub.up_lock, flags);
-	}
+	if (dhd->iflist[*ifidx]->net)
+		wl_cfg80211_event(dhd->iflist[*ifidx]->net, event, *data);
 #endif /* defined(WL_CFG80211) */
 
 	return (bcmerror);
@@ -7803,6 +7772,7 @@ void dhd_wk_lock_stats_dump(dhd_pub_t *dhdp)
 	spin_lock_irqsave(&dhd->wakelock_spinlock, flags);
 	dhd_wk_lock_rec_dump();
 	spin_unlock_irqrestore(&dhd->wakelock_spinlock, flags);
+	DHD_ERROR((KERN_ERR"Event wakelock counter %u\n", dhd->wakelock_event_counter));
 }
 #else
 #define STORE_WKLOCK_RECORD(wklock_type)
@@ -7836,17 +7806,26 @@ int dhd_os_wake_lock(dhd_pub_t *pub)
 	return ret;
 }
 
-void dhd_event_wake_lock(dhd_pub_t *pub)
+int dhd_event_wake_lock(dhd_pub_t *pub)
 {
 	dhd_info_t *dhd = (dhd_info_t *)(pub->info);
+	unsigned long flags;
+	int ret = 0;
 
 	if (dhd) {
+		spin_lock_irqsave(&dhd->wakelock_evt_spinlock, flags);
+		if (dhd->wakelock_event_counter == 0) {
 #ifdef CONFIG_HAS_WAKELOCK
-		wake_lock(&dhd->wl_evtwake);
+			wake_lock(&dhd->wl_evtwake);
 #elif (LINUX_VERSION_CODE > KERNEL_VERSION(2, 6, 36))
-		dhd_bus_dev_pm_stay_awake(pub);
+			dhd_bus_dev_pm_stay_awake(pub);
 #endif
+		}
+		dhd->wakelock_event_counter++;
+		ret = dhd->wakelock_event_counter;
+		spin_unlock_irqrestore(&dhd->wakelock_evt_spinlock, flags);
 	}
+	return ret;
 }
 
 void
@@ -7902,17 +7881,28 @@ int dhd_os_wake_unlock(dhd_pub_t *pub)
 	return ret;
 }
 
-void dhd_event_wake_unlock(dhd_pub_t *pub)
+int dhd_event_wake_unlock(dhd_pub_t *pub)
 {
 	dhd_info_t *dhd = (dhd_info_t *)(pub->info);
+	unsigned long flags;
+	int ret = 0;
 
 	if (dhd) {
+		spin_lock_irqsave(&dhd->wakelock_evt_spinlock, flags);
+		if (dhd->wakelock_event_counter > 0) {
+			dhd->wakelock_event_counter--;
+			if (dhd->wakelock_event_counter == 0) {
 #ifdef CONFIG_HAS_WAKELOCK
-		wake_unlock(&dhd->wl_evtwake);
+				wake_unlock(&dhd->wl_evtwake);
 #elif (LINUX_VERSION_CODE > KERNEL_VERSION(2, 6, 36))
-		dhd_bus_dev_pm_relax(pub);
+				dhd_bus_dev_pm_relax(pub);
 #endif
+			}
+			ret = dhd->wakelock_event_counter;
+		}
+		spin_unlock_irqrestore(&dhd->wakelock_evt_spinlock, flags);
 	}
+	return ret;
 }
 
 void dhd_pm_wake_unlock(dhd_pub_t *pub)
@@ -8082,6 +8072,7 @@ exit:
 void dhd_os_wake_lock_init(struct dhd_info *dhd)
 {
 	DHD_TRACE(("%s: initialize wake_lock_counters\n", __FUNCTION__));
+	dhd->wakelock_event_counter = 0;
 	dhd->wakelock_counter = 0;
 	dhd->wakelock_rx_timeout_enable = 0;
 	dhd->wakelock_ctrl_timeout_enable = 0;
@@ -8101,6 +8092,7 @@ void dhd_os_wake_lock_destroy(struct dhd_info *dhd)
 {
 	DHD_TRACE(("%s: deinit wake_lock_counters\n", __FUNCTION__));
 #ifdef CONFIG_HAS_WAKELOCK
+	dhd->wakelock_event_counter = 0;
 	dhd->wakelock_counter = 0;
 	dhd->wakelock_rx_timeout_enable = 0;
 	dhd->wakelock_ctrl_timeout_enable = 0;

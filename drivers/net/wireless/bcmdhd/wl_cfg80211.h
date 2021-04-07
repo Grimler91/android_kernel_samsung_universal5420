@@ -21,7 +21,7 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: wl_cfg80211.h 657638 2016-09-02 03:08:32Z $
+ * $Id: wl_cfg80211.h 617424 2016-02-05 08:13:38Z $
  */
 
 #ifndef _wl_cfg80211_h_
@@ -657,9 +657,6 @@ struct bcm_cfg80211 {
 	struct mutex event_sync;	/* maily for up/down synchronization */
 	bool disable_roam_event;
 	struct delayed_work pm_enable_work;
-	struct workqueue_struct *event_workq;   /* workqueue for event */
-	struct work_struct event_work;		/* work item for event */
-
 	vndr_ie_setbuf_t *ibss_vsie;	/* keep the VSIE for IBSS */
 	int ibss_vsie_len;
 #ifdef WLAIBSS

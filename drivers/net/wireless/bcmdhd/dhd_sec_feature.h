@@ -131,7 +131,7 @@
 	defined(CONFIG_MACH_LT03SKT) || defined(CONFIG_MACH_LT03KTT) || \
 	defined(CONFIG_MACH_LT03LGT) || defined(CONFIG_V1A) || defined(CONFIG_N1A) || \
 	defined(CONFIG_N2A) || defined(CONFIG_V2A) || defined(CONFIG_MACH_VIENNAEUR) || \
-	defined(CONFIG_MACH_CHAGALL) || defined(CFIG_MACH_KLIMT) || \
+	defined(CONFIG_MACH_CHAGALL) || defined(CONFIG_MACH_KLIMT) || \
 	defined(CONFIG_CHAGALL) || defined(CONFIG_KLIMT)
 #if !defined(CONFIG_MACH_CHAGALL_KDI)
 #undef USE_CID_CHECK
@@ -171,10 +171,6 @@
 #define SUPPORT_MULTIPLE_BOARD_REV_FROM_HW
 #endif /* CONFIG_WLAN_REGION_CODE == 150 */
 #endif /* CONFIG_WLAN_REGION_CODE >= 100 && CONFIG_WLAN_REGION_CODE < 200 */
-
-#if defined(CONFIG_WIFI_MULTIPLE_CHIP)
-#define MULTIPLE_CHIP_4345X
-#endif /* CONFIG_WIFI_MULTIPLE_CHIP */
 
 #if defined(CONFIG_V1A) || defined(CONFIG_V2A) || defined(CONFIG_MACH_VIENNAEUR) || defined(CONFIG_CHAGALL)
 #define SUPPORT_MULTIPLE_CHIPS
